@@ -1,0 +1,501 @@
+-- // Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- // Rayfield Library
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- // Settings
+local Settings = {
+    AimbotEnabled = false,
+    FOVEnabled = true,
+    FOVRadius = 250,
+    TeamCheck = true,
+    VisibilityCheck = true,
+    RainbowESP = true,
+    ESPEnabled = true,
+    SkeletonEnabled = true,          -- mới: toggle skeleton
+    ESPShowTeammates = false,
+    
+    HoldRightClick = false,
+    Smoothness = 0,
+    MaxDistance = math.huge,
+    AimPart = "Head",
+    
+    TriggerBotEnabled = false,
+    TriggerDelay = 0.08,
+    TriggerOnlyWhenAiming = false,
+    
+    TelekillEnabled = false,
+    TelekillDelay = 0.8,
+    TelekillOffsetDistance = 3.5,
+    TelekillAutoShoot = true,
+    
+    SpeedEnabled = false,
+    SpeedValue = 50,
+    FlyEnabled = false,
+    FlySpeed = 50,
+}
+
+-- // Universal Team Check
+local function isTeammate(player)
+    if not player or player == LocalPlayer then return false end
+    if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then return true end
+    local pls = player:FindFirstChild("leaderstats")
+    local lls = LocalPlayer:FindFirstChild("leaderstats")
+    if pls and lls then
+        local pt = pls:FindFirstChild("Team")
+        local lt = lls:FindFirstChild("Team")
+        if pt and lt and pt.Value == lt.Value then return true end
+    end
+    if player.TeamColor and LocalPlayer.TeamColor and player.TeamColor == LocalPlayer.TeamColor then return true end
+    return false
+end
+
+-- // Get Closest Enemy
+local function getClosestEnemy()
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local closest, minDist = nil, math.huge
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer or (Settings.TeamCheck and isTeammate(p)) then continue end
+        local char = p.Character
+        if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 or not char:FindFirstChild("HumanoidRootPart") then continue end
+        
+        local part = char[Settings.AimPart] or char.HumanoidRootPart
+        local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if not onScreen then continue end
+        
+        local screenDist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+        if Settings.FOVEnabled and screenDist > Settings.FOVRadius then continue end
+        
+        local worldDist = (part.Position - Camera.CFrame.Position).Magnitude
+        if worldDist > Settings.MaxDistance then continue end
+        
+        if screenDist < minDist then
+            minDist = screenDist
+            closest = p
+        end
+    end
+    return closest
+end
+
+-- // UI
+local Window = Rayfield:CreateWindow({
+    Name = "Tan Hub | Arsenal OP",
+    LoadingTitle = "Tan Hub",
+    LoadingSubtitle = "by Tan - Tay Ninh",
+    ConfigurationSaving = { Enabled = false }
+})
+
+local Tab = Window:CreateTab("Main")
+
+Tab:CreateToggle({Name = "Aimbot", CurrentValue = false, Callback = function(v) Settings.AimbotEnabled = v end})
+Tab:CreateToggle({Name = "FOV Check", CurrentValue = true, Callback = function(v) Settings.FOVEnabled = v end})
+Tab:CreateSlider({Name = "FOV Radius", Range = {80, 600}, Increment = 10, Suffix = "px", CurrentValue = 250, Callback = function(v) Settings.FOVRadius = v end})
+Tab:CreateToggle({Name = "Team Check", CurrentValue = true, Callback = function(v) Settings.TeamCheck = v end})
+Tab:CreateToggle({Name = "Visibility Check", CurrentValue = true, Callback = function(v) Settings.VisibilityCheck = v end})
+Tab:CreateToggle({Name = "Hold RMB to Aim", CurrentValue = false, Callback = function(v) Settings.HoldRightClick = v end})
+Tab:CreateSlider({Name = "Smoothness", Range = {0, 1}, Increment = 0.01, CurrentValue = 0, Callback = function(v) Settings.Smoothness = v end})
+Tab:CreateSlider({Name = "Max Distance", Range = {100, 5000}, Increment = 100, Suffix = "studs", CurrentValue = 5000, Callback = function(v) Settings.MaxDistance = v end})
+Tab:CreateDropdown({Name = "Aim Part", Options = {"Head", "HumanoidRootPart"}, CurrentOption = {"Head"}, Callback = function(opt) Settings.AimPart = opt[1] end})
+
+Tab:CreateToggle({Name = "TriggerBot", CurrentValue = false, Callback = function(v) Settings.TriggerBotEnabled = v end})
+Tab:CreateToggle({Name = "Trigger only when Aiming", CurrentValue = false, Callback = function(v) Settings.TriggerOnlyWhenAiming = v end})
+Tab:CreateSlider({Name = "Trigger Delay", Range = {0, 0.5}, Increment = 0.01, Suffix = "s", CurrentValue = 0.08, Callback = function(v) Settings.TriggerDelay = v end})
+
+Tab:CreateToggle({Name = "Telekill (tự tìm địch, tele sau lưng, xuyên tường)", CurrentValue = false, Callback = function(v) Settings.TelekillEnabled = v end})
+Tab:CreateSlider({Name = "Telekill Delay", Range = {0.3, 2}, Increment = 0.1, Suffix = "s", CurrentValue = 0.8, Callback = function(v) Settings.TelekillDelay = v end})
+Tab:CreateToggle({Name = "Auto Shoot sau Tele", CurrentValue = true, Callback = function(v) Settings.TelekillAutoShoot = v end})
+
+Tab:CreateToggle({Name = "Speed Hack", CurrentValue = false, Callback = function(v) Settings.SpeedEnabled = v end})
+Tab:CreateSlider({Name = "Speed Value", Range = {16, 200}, Increment = 1, Suffix = "speed", CurrentValue = 50, Callback = function(v) Settings.SpeedValue = v end})
+
+Tab:CreateToggle({Name = "Fly (WASD + Space/Ctrl)", CurrentValue = false, Callback = function(v) Settings.FlyEnabled = v end})
+Tab:CreateSlider({Name = "Fly Speed", Range = {20, 200}, Increment = 5, Suffix = "", CurrentValue = 50, Callback = function(v) Settings.FlySpeed = v end})
+
+Tab:CreateToggle({Name = "ESP (Box/Tracer/Name/HP)", CurrentValue = true, Callback = function(v) Settings.ESPEnabled = v end})
+Tab:CreateToggle({Name = "Skeleton ESP", CurrentValue = true, Callback = function(v) Settings.SkeletonEnabled = v end})
+Tab:CreateToggle({Name = "Show Teammates ESP", CurrentValue = false, Callback = function(v) Settings.ESPShowTeammates = v end})
+Tab:CreateToggle({Name = "Rainbow ESP (Enemies)", CurrentValue = true, Callback = function(v) Settings.RainbowESP = v end})
+
+-- // FOV Circle
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = 2
+fovCircle.NumSides = 100
+fovCircle.Filled = false
+fovCircle.Visible = false
+fovCircle.ZIndex = 999
+fovCircle.Transparency = 0.8
+fovCircle.Color = Color3.fromRGB(255, 255, 0)
+
+RunService.RenderStepped:Connect(function()
+    fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    fovCircle.Radius = Settings.FOVRadius
+    fovCircle.Visible = Settings.AimbotEnabled and Settings.FOVEnabled
+end)
+
+-- // Hold RMB
+local holdingRMB = false
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then holdingRMB = true end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then holdingRMB = false end
+end)
+
+-- // Aimbot
+RunService.RenderStepped:Connect(function()
+    if Settings.HoldRightClick and not holdingRMB then return end
+    if not Settings.AimbotEnabled then return end
+    
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local closest, dist = nil, math.huge
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer or (Settings.TeamCheck and isTeammate(p)) then continue end
+        local c = p.Character
+        if not c or not c:FindFirstChild("Humanoid") or not c:FindFirstChild(Settings.AimPart) then continue end
+        
+        local part = c[Settings.AimPart]
+        local screen, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if not onScreen then continue end
+        
+        local sd = (Vector2.new(screen.X, screen.Y) - center).Magnitude
+        if Settings.FOVEnabled and sd > Settings.FOVRadius then continue end
+        
+        local wd = (part.Position - Camera.CFrame.Position).Magnitude
+        if wd > Settings.MaxDistance then continue end
+        
+        if Settings.VisibilityCheck then
+            local origin = Camera.CFrame.Position
+            local dir = part.Position - origin
+            local params = RaycastParams.new()
+            params.FilterDescendantsInstances = {LocalPlayer.Character}
+            params.FilterType = Enum.RaycastFilterType.Blacklist
+            local res = workspace:Raycast(origin, dir, params)
+            if res and not res.Instance:IsDescendantOf(c) then continue end
+        end
+        
+        if sd < dist then
+            dist = sd
+            closest = part
+        end
+    end
+    
+    if closest then
+        if Settings.Smoothness > 0 then
+            TweenService:Create(Camera, TweenInfo.new(Settings.Smoothness, Enum.EasingStyle.Sine), {CFrame = CFrame.lookAt(Camera.CFrame.Position, closest.Position)}):Play()
+        else
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, closest.Position)
+        end
+    end
+end)
+
+-- // TriggerBot
+local lastTrig = 0
+RunService.RenderStepped:Connect(function()
+    if not Settings.TriggerBotEnabled then return end
+    if Settings.TriggerOnlyWhenAiming and ((Settings.HoldRightClick and not holdingRMB) or (not Settings.HoldRightClick and not Settings.AimbotEnabled)) then return end
+    if tick() - lastTrig < Settings.TriggerDelay then return end
+    
+    if Mouse.Target and Mouse.Target.Parent then
+        local hum = Mouse.Target.Parent:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health > 0 then
+            local plr = Players:GetPlayerFromCharacter(Mouse.Target.Parent)
+            if plr and plr ~= LocalPlayer and not (Settings.TeamCheck and isTeammate(plr)) then
+                if Settings.VisibilityCheck then
+                    local head = Mouse.Target.Parent:FindFirstChild("Head")
+                    if head then
+                        local o = Camera.CFrame.Position
+                        local d = head.Position - o
+                        local p = RaycastParams.new()
+                        p.FilterDescendantsInstances = {LocalPlayer.Character}
+                        p.FilterType = Enum.RaycastFilterType.Blacklist
+                        local r = workspace:Raycast(o, d, p)
+                        if r and not r.Instance:IsDescendantOf(Mouse.Target.Parent) then return end
+                    else return end
+                end
+                
+                mouse1press()
+                task.wait(0.015)
+                mouse1release()
+                lastTrig = tick()
+            end
+        end
+    end
+end)
+
+-- // Telekill
+local lastTele = 0
+RunService.Heartbeat:Connect(function()
+    if not Settings.TelekillEnabled then return end
+    if tick() - lastTele < Settings.TelekillDelay then return end
+    
+    local target = getClosestEnemy()
+    if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end
+    
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
+    
+    local targetHRP = target.Character.HumanoidRootPart
+    local behind = targetHRP.CFrame * CFrame.new(0, 0, Settings.TelekillOffsetDistance)
+    
+    myChar.HumanoidRootPart.CFrame = behind
+    
+    if Settings.TelekillAutoShoot then
+        mouse1press()
+        task.wait(0.03)
+        mouse1release()
+    end
+    
+    lastTele = tick()
+end)
+
+-- // Speed Hack
+RunService.RenderStepped:Connect(function()
+    if Settings.SpeedEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = Settings.SpeedValue
+    end
+end)
+
+-- // Fly Hack
+local flying = false
+local flyBodyVelocity
+local flyBodyGyro
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        Settings.FlyEnabled = not Settings.FlyEnabled
+        flying = Settings.FlyEnabled
+        
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        
+        if flying then
+            flyBodyVelocity = Instance.new("BodyVelocity")
+            flyBodyVelocity.Velocity = Vector3.new(0,0,0)
+            flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            flyBodyVelocity.Parent = char.HumanoidRootPart
+            
+            flyBodyGyro = Instance.new("BodyGyro")
+            flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            flyBodyGyro.CFrame = char.HumanoidRootPart.CFrame
+            flyBodyGyro.Parent = char.HumanoidRootPart
+            
+            char.Humanoid.PlatformStand = true
+        else
+            if flyBodyVelocity then flyBodyVelocity:Destroy() end
+            if flyBodyGyro then flyBodyGyro:Destroy() end
+            char.Humanoid.PlatformStand = false
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if not Settings.FlyEnabled or not flying then return end
+    
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    
+    local moveDirection = Vector3.new(0,0,0)
+    local camLook = Camera.CFrame.LookVector
+    local camRight = Camera.CFrame.RightVector
+    
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection += camLook end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection -= camLook end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection -= camRight end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection += camRight end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDirection += Vector3.new(0,1,0) end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDirection -= Vector3.new(0,1,0) end
+    
+    if flyBodyVelocity then
+        flyBodyVelocity.Velocity = moveDirection.Unit * Settings.FlySpeed
+    end
+    
+    if flyBodyGyro then
+        flyBodyGyro.CFrame = Camera.CFrame
+    end
+end)
+
+-- // ESP + Skeleton
+local espObjects = {}
+local rainbowHue = 0
+
+local skeletonConnections = {
+    {"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"},
+    {"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"}, {"LeftLowerArm", "LeftHand"},
+    {"UpperTorso", "RightUpperArm"}, {"RightUpperArm", "RightLowerArm"}, {"RightLowerArm", "RightHand"},
+    {"LowerTorso", "LeftUpperLeg"}, {"LeftUpperLeg", "LeftLowerLeg"}, {"LeftLowerLeg", "LeftFoot"},
+    {"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}, {"RightLowerLeg", "RightFoot"},
+}
+
+local function getPartPos(part)
+    if not part then return nil end
+    local pos, visible = Camera:WorldToViewportPoint(part.Position)
+    return visible and pos or nil
+end
+
+RunService.Heartbeat:Connect(function(delta)
+    if Settings.RainbowESP then 
+        rainbowHue = (rainbowHue + delta * 80) % 360 
+    end
+    local rainbowColor = Color3.fromHSV(rainbowHue / 360, 1, 1)
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        
+        local isTeam = isTeammate(player)
+        if isTeam and not Settings.ESPShowTeammates then
+            if espObjects[player] then 
+                for k, obj in pairs(espObjects[player]) do 
+                    if obj and (obj:IsA("Drawing") or obj.Remove) then obj:Remove() end 
+                end 
+                espObjects[player] = nil 
+            end
+            continue
+        end
+        
+        local char = player.Character
+        if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 
+            or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChild("Head") then
+            
+            if espObjects[player] then 
+                for k, obj in pairs(espObjects[player]) do obj:Remove() end 
+                espObjects[player] = nil 
+            end
+            continue
+        end
+        
+        local root = char.HumanoidRootPart
+        local humanoid = char.Humanoid
+        
+        local esp = espObjects[player] or {Skeleton = {}}
+        espObjects[player] = esp
+        
+        local mainColor = isTeam and Color3.fromRGB(100, 180, 255) 
+                         or (Settings.RainbowESP and rainbowColor or Color3.fromRGB(255, 60, 60))
+        
+        -- Box
+        esp.Box = esp.Box or Drawing.new("Square")
+        esp.Box.Thickness = 2
+        esp.Box.Filled = false
+        esp.Box.Transparency = 1
+        esp.Box.Color = mainColor
+        
+        -- Tracer
+        esp.Tracer = esp.Tracer or Drawing.new("Line")
+        esp.Tracer.Thickness = 1.5
+        esp.Tracer.Transparency = 1
+        esp.Tracer.Color = mainColor
+        
+        -- Name
+        esp.Name = esp.Name or Drawing.new("Text")
+        esp.Name.Size = 14
+        esp.Name.Center = true
+        esp.Name.Outline = true
+        esp.Name.Transparency = 1
+        esp.Name.Color = mainColor
+        esp.Name.Text = player.Name .. (isTeam and " [TEAM]" or "")
+        
+        -- HP
+        esp.HP = esp.HP or Drawing.new("Text")
+        esp.HP.Size = 13
+        esp.HP.Center = true
+        esp.HP.Outline = true
+        esp.HP.Transparency = 1
+        esp.HP.Color = humanoid.Health > 50 and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,80,80)
+        esp.HP.Text = math.floor(humanoid.Health + 0.5) .. " HP"
+        
+        local rootPos, rootOnScreen = Camera:WorldToViewportPoint(root.Position)
+        
+        if rootOnScreen and Settings.ESPEnabled then
+            local headPos = getPartPos(char.Head)
+            local torsoPos = getPartPos(char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"))
+            local legPos = getPartPos(char:FindFirstChild("LowerTorso") or root)
+            
+            if not headPos or not torsoPos or not legPos then continue end
+            
+            local topY = headPos.Y
+            local bottomY = legPos.Y
+            local height = math.abs(topY - bottomY) * 1.15
+            local width = height * 0.5
+            
+            -- Box
+            esp.Box.Size = Vector2.new(width, height)
+            esp.Box.Position = Vector2.new(rootPos.X - width/2, rootPos.Y - height/2)
+            esp.Box.Visible = true
+            
+            -- Tracer
+            esp.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+            esp.Tracer.To = Vector2.new(rootPos.X, rootPos.Y)
+            esp.Tracer.Visible = true
+            
+            -- Name & HP
+            esp.Name.Position = Vector2.new(rootPos.X, rootPos.Y - height/2 - 20)
+            esp.Name.Visible = true
+            esp.HP.Position = Vector2.new(rootPos.X, rootPos.Y + height/2 + 4)
+            esp.HP.Visible = true
+            
+            -- Skeleton
+            if Settings.SkeletonEnabled then
+                for i, pair in ipairs(skeletonConnections) do
+                    local p1 = char:FindFirstChild(pair[1])
+                    local p2 = char:FindFirstChild(pair[2])
+                    if not p1 or not p2 then continue end
+                    
+                    local pos1 = getPartPos(p1)
+                    local pos2 = getPartPos(p2)
+                    if not pos1 or not pos2 then continue end
+                    
+                    local line = esp.Skeleton[i] or Drawing.new("Line")
+                    esp.Skeleton[i] = line
+                    
+                    line.From = pos1
+                    line.To = pos2
+                    line.Color = mainColor
+                    line.Thickness = 1.4
+                    line.Transparency = 1
+                    line.Visible = true
+                end
+            end
+        else
+            esp.Box.Visible = false
+            esp.Tracer.Visible = false
+            esp.Name.Visible = false
+            esp.HP.Visible = false
+            for _, line in pairs(esp.Skeleton) do
+                line.Visible = false
+            end
+        end
+    end
+end)
+
+-- Cleanup
+Players.PlayerRemoving:Connect(function(player)
+    if espObjects[player] then
+        for _, obj in pairs(espObjects[player]) do
+            if obj and (obj:IsA("Drawing") or obj.Remove) then
+                obj:Remove()
+            end
+        end
+        if espObjects[player].Skeleton then
+            for _, line in pairs(espObjects[player].Skeleton) do
+                if line then line:Remove() end
+            end
+        end
+        espObjects[player] = nil
+    end
+end)
+
+Rayfield:Notify({
+    Title = "Tan Hub Loaded!",
+    Content = "• Aimbot + TriggerBot + Telekill đầy đủ\n• Speed & Fly (F để toggle bay)\n• ESP: Box + Tracer + Name + HP + **Skeleton** (bật/tắt riêng)\n• Rainbow ESP cho địch cực ngầu\nChơi vui & cẩn thận kẻo ban nhé Tan!",
+    Duration = 12
+})
